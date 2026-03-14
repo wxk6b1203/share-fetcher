@@ -10,6 +10,7 @@ import com.github.ak.fetcher.mapper.StockDailyMapper;
 import com.github.ak.fetcher.mapper.StockBasicMapper;
 import com.github.ak.fetcher.mapper.StockSpotMapper;
 import com.github.ak.fetcher.mapper.StockFundamentalMapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
@@ -114,12 +115,15 @@ public class StockService {
      * 拉取股票日线数据
      */
     public Mono<Integer> fetchStockDaily(String symbol, String startDate, String endDate, String adjust) {
+        // 6开头是上海，0、3开头是深圳
+        String marketSymbol = symbol.startsWith("6") ? "sh" + symbol : "sz" + symbol;
+
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder
-                        .path("/stock_zh_a_hist")
-                        .queryParam("symbol", symbol)
-                        .queryParam("start_date", startDate)
-                        .queryParam("end_date", endDate)
+                        .path("/stock_zh_a_daily")
+                        .queryParam("symbol", marketSymbol)
+                        .queryParam("start_date", startDate.replace("-", ""))
+                        .queryParam("end_date", endDate.replace("-", ""))
                         .queryParam("adjust", adjust)
                         .build())
                 .retrieve()
@@ -141,33 +145,38 @@ public class StockService {
                 return 0;
             }
 
-            List<StockDaily> list = new ArrayList<>();
+            int insertedCount = 0;
             for (JsonNode row : data) {
                 StockDaily daily = new StockDaily();
                 daily.setCode(extractPureCode(code));
                 // 日期格式可能是 "2024-01-02T00:00:00.000"，需要处理
-                String dateStr = row.get("日期").asText();
+                String dateStr = row.get("date").asText();
                 if (dateStr.contains("T")) {
                     dateStr = dateStr.split("T")[0];
                 }
-                daily.setTradeDate(LocalDate.parse(dateStr));
-                daily.setOpen(getBigDecimal(row, "开盘"));
-                daily.setClose(getBigDecimal(row, "收盘"));
-                daily.setHigh(getBigDecimal(row, "最高"));
-                daily.setLow(getBigDecimal(row, "最低"));
-                daily.setVolume(getBigDecimal(row, "成交量"));
-                daily.setAmount(getBigDecimal(row, "成交额"));
-                daily.setOutstandingShare(getBigDecimal(row, "振幅"));
-                daily.setTurnover(getBigDecimal(row, "涨跌幅"));
+                LocalDate tradeDate = LocalDate.parse(dateStr);
+                daily.setTradeDate(tradeDate);
+                daily.setOpen(getBigDecimal(row, "open"));
+                daily.setClose(getBigDecimal(row, "close"));
+                daily.setHigh(getBigDecimal(row, "high"));
+                daily.setLow(getBigDecimal(row, "low"));
+                daily.setVolume(getBigDecimal(row, "volume"));
+                daily.setAmount(getBigDecimal(row, "amount"));
+                daily.setOutstandingShare(getBigDecimal(row, "outstanding_share"));
+                daily.setTurnover(getBigDecimal(row, "turnover"));
                 daily.setAdjustFlag(adjustFlag);
-                list.add(daily);
-            }
 
-            for (StockDaily daily : list) {
-                stockDailyMapper.insert(daily);
+                // 跳过已存在的记录（根据 code + trade_date 判断）
+                QueryWrapper<StockDaily> queryWrapper = new QueryWrapper<>();
+                queryWrapper.eq("code", daily.getCode())
+                        .eq("trade_date", tradeDate);
+                StockDaily existing = stockDailyMapper.selectOne(queryWrapper);
+                if (existing == null) {
+                    stockDailyMapper.insert(daily);
+                    insertedCount++;
+                }
             }
-
-            return list.size();
+            return insertedCount;
         } catch (Exception e) {
             throw new RuntimeException("解析股票数据失败: " + e.getMessage(), e);
         }
@@ -244,10 +253,13 @@ public class StockService {
      * 拉取单只股票基本面数据
      */
     public Mono<Integer> fetchStockFundamental(String symbol) {
+        // 添加市场前缀：6开头是上海，0、3开头是深圳
+        String marketSymbol = symbol.startsWith("6") ? "sh" + symbol : "sz" + symbol;
+
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/stock_individual_basic_info_xq")
-                        .queryParam("symbol", symbol)
+                        .queryParam("symbol", marketSymbol)
                         .build())
                 .retrieve()
                 .bodyToMono(String.class)
@@ -323,7 +335,8 @@ public class StockService {
 
             for (JsonNode node : array) {
                 String item = node.get("item").asText();
-                String value = node.get("value").asText();
+                JsonNode valueNode = node.get("value");
+                String value = valueNode == null || valueNode.isNull() ? null : valueNode.isTextual() ? valueNode.asText() : valueNode.toString();
 
                 switch (item) {
                     case "org_id":
@@ -366,10 +379,10 @@ public class StockService {
                         fundamental.setEstablishedDate(value);
                         break;
                     case "reg_asset":
-                        fundamental.setRegAsset(new BigDecimal(value));
+                        if (value != null) fundamental.setRegAsset(new BigDecimal(value));
                         break;
                     case "staff_num":
-                        fundamental.setStaffNum(Integer.parseInt(value));
+                        if (value != null) fundamental.setStaffNum(Integer.parseInt(value));
                         break;
                     case "telephone":
                         fundamental.setTelephone(value);

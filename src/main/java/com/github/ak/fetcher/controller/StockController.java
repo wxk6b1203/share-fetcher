@@ -53,7 +53,7 @@ public class StockController {
         String symbol = request.get("symbol");
         String startDate = request.getOrDefault("startDate", "20230101");
         String endDate = request.getOrDefault("endDate", "20231231");
-        String adjust = request.getOrDefault("adjust", "");
+        String adjust = request.getOrDefault("adjust", "qfq");
 
         return stockService.fetchStockDaily(symbol, startDate, endDate, adjust)
                 .map(count -> Map.of(

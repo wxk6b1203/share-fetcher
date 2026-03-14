@@ -106,3 +106,18 @@ CREATE TABLE IF NOT EXISTS stock_fundamental (
 );
 
 CREATE INDEX IF NOT EXISTS idx_stock_fundamental_code ON stock_fundamental(code);
+
+-- 任务表
+CREATE TABLE IF NOT EXISTS task (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_type VARCHAR(50) NOT NULL,
+    input_params TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    result TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP,
+    finished_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_status ON task(status);
+CREATE INDEX IF NOT EXISTS idx_task_type ON task(task_type);
