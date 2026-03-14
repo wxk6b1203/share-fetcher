@@ -1,0 +1,3 @@
+[submodule "akshare"]
+	path = akshare
+	url = https://github.com/akfamily/akshare.git

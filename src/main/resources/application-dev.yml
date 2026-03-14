@@ -1,0 +1,33 @@
+server:
+  port: 8090
+
+spring:
+  datasource:
+    url: jdbc:sqlite:data/fetcher.db
+    driver-class-name: org.sqlite.JDBC
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:ddl/init.sql
+
+# 日志配置：只打印 INFO 级别
+logging:
+  level:
+    root: INFO
+    com.github.ak.fetcher: INFO
+    org.springframework: INFO
+    com.baomidou.mybatisplus: INFO
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    db-config:
+      id-type: auto
+      db-type: sqlite
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+aktools:
+  base-url: http://localhost:8080
