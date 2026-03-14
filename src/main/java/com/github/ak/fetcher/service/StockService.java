@@ -116,7 +116,9 @@ public class StockService {
      */
     public Mono<Integer> fetchStockDaily(String symbol, String startDate, String endDate, String adjust) {
         // 6开头是上海，0、3开头是深圳
-        String marketSymbol = symbol.startsWith("6") ? "sh" + symbol : "sz" + symbol;
+        // 6开头是上海，0/3开头是深圳，9开头是北交所
+        String marketSymbol = symbol.startsWith("6") ? "sh" + symbol :
+                             symbol.startsWith("9") ? "bj" + symbol : "sz" + symbol;
 
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder
@@ -254,7 +256,9 @@ public class StockService {
      */
     public Mono<Integer> fetchStockFundamental(String symbol) {
         // 添加市场前缀：6开头是上海，0、3开头是深圳
-        String marketSymbol = symbol.startsWith("6") ? "sh" + symbol : "sz" + symbol;
+        // 6开头是上海，0/3开头是深圳，9开头是北交所
+        String marketSymbol = symbol.startsWith("6") ? "sh" + symbol :
+                             symbol.startsWith("9") ? "bj" + symbol : "sz" + symbol;
 
         return webClient.get()
                 .uri(uriBuilder -> uriBuilder

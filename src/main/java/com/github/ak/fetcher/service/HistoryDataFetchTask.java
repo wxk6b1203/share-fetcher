@@ -150,7 +150,9 @@ public class HistoryDataFetchTask {
 
     private int fetchAndSaveDailyData(String code, String startDate, String endDate, String adjustFlag) {
         // 6开头是上海，0、3开头是深圳
-        String symbol = code.startsWith("6") ? "sh" + code : "sz" + code;
+        // 6开头是上海，0/3开头是深圳，9开头是北交所
+        String symbol = code.startsWith("6") ? "sh" + code :
+                        code.startsWith("9") ? "bj" + code : "sz" + code;
 
         Mono<String> responseMono = webClient.get()
                 .uri(uriBuilder -> uriBuilder
