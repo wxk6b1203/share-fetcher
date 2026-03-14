@@ -21,23 +21,29 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Component
-public class HistoryDataFetchTask {
+public class HistoryDataFetchTask implements TaskExecutor.CancellableTask {
     private static final Logger log = LoggerFactory.getLogger(HistoryDataFetchTask.class);
 
     private final StockService stockService;
     private final StockBasicMapper stockBasicMapper;
     private final StockDailyMapper stockDailyMapper;
+    private final TaskExecutor taskExecutor;
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
+
+    // 用于检查任务是否被取消
+    private volatile boolean cancelled = false;
 
     public HistoryDataFetchTask(StockService stockService,
                                  StockBasicMapper stockBasicMapper,
                                  StockDailyMapper stockDailyMapper,
+                                 TaskExecutor taskExecutor,
                                  AkToolsConfig akToolsConfig,
                                  ObjectMapper objectMapper) {
         this.stockService = stockService;
         this.stockBasicMapper = stockBasicMapper;
         this.stockDailyMapper = stockDailyMapper;
+        this.taskExecutor = taskExecutor;
         this.objectMapper = objectMapper;
 
         // 创建 WebClient
@@ -92,10 +98,20 @@ public class HistoryDataFetchTask {
             log.info("Will fetch data for {} symbols", symbols.size());
 
             int totalInserted = 0;
+            int processedCount = 0;
+            int totalSymbols = symbols.size();
+            int skippedCount = 0;
+
             for (String code : symbols) {
+                // 检查任务是否被取消
+                if (cancelled) {
+                    log.info("Task cancelled, stopping at code: {}", code);
+                    break;
+                }
+
                 try {
                     // 添加延迟避免请求过快（1-3秒随机）
-                    Thread.sleep(1000 + (long) (Math.random() * 2000));
+                    Thread.sleep((long) (Math.random() * 1000));
 
                     // 获取该股票在数据库中的最早和最晚日期
                     LocalDate dbMinDate = getDbMinDate(code);
@@ -123,12 +139,14 @@ public class HistoryDataFetchTask {
                     } else {
                         // 数据已完整，跳过
                         log.info("Daily data for {} is already up to date, skipping", code);
+                        skippedCount++;
                         continue;
                     }
 
                     // 如果计算出的开始日期大于结束日期，说明没有需要拉取的数据
                     if (LocalDate.parse(fetchStart).isAfter(LocalDate.parse(fetchEnd))) {
                         log.info("No new data to fetch for {}", code);
+                        skippedCount++;
                         continue;
                     }
 
@@ -139,9 +157,14 @@ public class HistoryDataFetchTask {
                 } catch (Exception e) {
                     log.error("Failed to fetch daily data for {}: {}", code, e.getMessage());
                 }
+
+                processedCount++;
+                // 每处理完一只股票更新一次任务进度
+                updateProgress(processedCount, totalSymbols, totalInserted, skippedCount);
             }
 
-            return String.format("{\"totalInserted\": %d, \"symbolsProcessed\": %d}", totalInserted, symbols.size());
+            return String.format("{\"totalInserted\": %d, \"symbolsProcessed\": %d, \"totalSymbols\": %d, \"skippedCount\": %d, \"progress\": \"%d/%d\"}",
+                    totalInserted, processedCount, totalSymbols, skippedCount, processedCount, totalSymbols);
         } catch (Exception e) {
             log.error("History data fetch task failed", e);
             throw new RuntimeException("Task execution failed: " + e.getMessage(), e);
@@ -252,5 +275,29 @@ public class HistoryDataFetchTask {
                 .last("LIMIT 1");
         StockDaily last = stockDailyMapper.selectOne(queryWrapper);
         return last != null ? last.getTradeDate() : null;
+    }
+
+    /**
+     * 更新任务进度
+     */
+    private void updateProgress(int processed, int total, int inserted, int skipped) {
+        String progress = String.format("{\"processed\": %d, \"total\": %d, \"inserted\": %d, \"skipped\": %d, \"progress\": \"%d/%d (%.1f%%)\"}",
+                processed, total, inserted, skipped, processed, total, (processed * 100.0 / total));
+        taskExecutor.updateCurrentTaskProgress(progress);
+        log.info("Task progress: {}/{} ({:.1f}%)", processed, total, processed * 100.0 / total);
+    }
+
+    /**
+     * 设置取消标志
+     */
+    public void cancel() {
+        this.cancelled = true;
+    }
+
+    /**
+     * 检查是否已取消
+     */
+    public boolean isCancelled() {
+        return cancelled;
     }
 }
