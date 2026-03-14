@@ -53,6 +53,7 @@ curl -X POST http://localhost:8090/api/fetch/stock-list
 | stock_daily | 日线行情 |
 | stock_spot | 实时行情（个股快照） |
 | stock_fundamental | 基本面数据（雪球，含版本控制） |
+| task | 异步任务表 |
 
 ### stock_basic 字段说明
 
@@ -90,16 +91,12 @@ curl -X POST http://localhost:8090/api/fetch/stock-list
 | latest_price | DECIMAL(20,2) | 最新价 (元) |
 | change_pct | DECIMAL(20,2) | 涨跌幅 (%) |
 | change_amount | DECIMAL(20,2) | 涨跌额 (元) |
+| bid | DECIMAL(20,2) | 买入价 (元) |
+| ask | DECIMAL(20,2) | 卖出价 (元) |
 | volume | DECIMAL(20,2) | 成交量 (手) |
 | amount | DECIMAL(20,2) | 成交额 (元) |
-| amplitude | DECIMAL(20,2) | 振幅 (%) |
 | high/low/open_price/prev_close | DECIMAL(20,2) | 最高/最低/今开/昨收价 |
-| volume_ratio | DECIMAL(20,2) | 量比 |
-| turnover_rate | DECIMAL(20,2) | 换手率 (%) |
-| pe_dynamic | DECIMAL(20,2) | 市盈率-动态 |
-| pb | DECIMAL(20,2) | 市净率 |
-| total_market_value | DECIMAL(20,2) | 总市值 (元) |
-| circ_market_value | DECIMAL(20,2) | 流通市值 (元) |
+| timestamp | VARCHAR(10) | 时间戳 (HH:mm:ss) |
 
 ### stock_fundamental 字段说明
 
@@ -119,6 +116,19 @@ curl -X POST http://localhost:8090/api/fetch/stock-list
 | provincial_name | VARCHAR(50) | 所在省份 |
 | version | INTEGER | 版本号 (从0开始) |
 
+### task 字段说明
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER | 主键 |
+| task_type | VARCHAR(50) | 任务类型 |
+| input_params | TEXT | 输入参数(JSON格式) |
+| status | VARCHAR(20) | 任务状态 (PENDING/RUNNING/COMPLETED/FAILED/CANCELLED) |
+| result | TEXT | 执行结果(JSON格式) |
+| created_at | TIMESTAMP | 创建时间 |
+| started_at | TIMESTAMP | 开始执行时间 |
+| finished_at | TIMESTAMP | 结束时间 |
+
 ## API接口
 
 | 接口 | 方法 | 说明 |
@@ -130,11 +140,37 @@ curl -X POST http://localhost:8090/api/fetch/stock-list
 | `/api/fetch/fundamentals` | POST | 批量拉取所有股票基本面 |
 | `/api/stock/with-fundamental` | POST | 查询股票基本信息及关联的基本面 |
 
+### 任务系统接口
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/task/submit/{taskType}` | POST | 提交异步任务 |
+| `/api/task/status/{taskId}` | GET | 查询任务状态 |
+| `/api/task/cancel/{taskId}` | POST | 停止指定任务 |
+| `/api/task/list` | GET | 分页获取任务列表 |
+
+#### 任务类型
+
+- `HISTORY_DATA_FETCH`: 历史行情数据拉取任务
+  - 参数: `startDate`, `endDate`, `symbol`(可选，单只股票), `codeStart`(可选，代码范围开始), `codeEnd`(可选，代码范围结束), `adjust`(复权类型，默认qfq)
+- `FUNDAMENTAL_FETCH`: 基本面数据拉取任务
+  - 参数: `symbol`(可选，单只股票), `codeStart`(可选，代码范围开始), `codeEnd`(可选，代码范围结束)
+- `SPOT_FETCH`: 实时行情数据拉取任务
+  - 参数: 无（获取全部A股实时行情）
+
 ## 代码位置
 
-- 配置: `src/main/java/com/github/ak/fetcher/config/AkToolsConfig.java`
-- Controller: `src/main/java/com/github/ak/fetcher/controller/StockController.java`
-- Service: `src/main/java/com/github/ak/fetcher/service/StockService.java`
+- 配置: `src/main/java/com/github/ak/fetcher/config/`
+  - AkToolsConfig.java - AKTools配置
+  - TaskConfig.java - 任务处理器注册
+- Controller: `src/main/java/com/github/ak/fetcher/controller/`
+  - StockController.java - 股票数据接口
+  - TaskController.java - 任务管理接口
+- Service: `src/main/java/com/github/ak/fetcher/service/`
+  - StockService.java - 股票数据服务
+  - TaskExecutor.java - 任务执行器
+  - HistoryDataFetchTask.java - 历史数据拉取任务
+  - FundamentalFetchTask.java - 基本面数据拉取任务
 - DTO: `src/main/java/com/github/ak/fetcher/dto/`
 - 实体/Mappers: `src/main/java/com/github/ak/fetcher/entity/` 和 `mapper/`
 - DDL: `src/main/resources/ddl/init.sql`
@@ -146,3 +182,5 @@ curl -X POST http://localhost:8090/api/fetch/stock-list
 - 批量拉取数据量大时耗时长，建议单独测试每只股票
 - stock_fundamental 使用版本控制，当关键字段变化时新增版本
 - 日志级别设为 INFO，SQL语句不再打印到控制台
+- 历史行情拉取支持增量更新：如果数据库已有数据，会自动跳过已存在的日期范围
+- 任务系统使用Java虚拟线程实现，支持任务取消和进度追踪

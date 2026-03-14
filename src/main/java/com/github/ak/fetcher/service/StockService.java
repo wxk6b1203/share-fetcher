@@ -2,6 +2,7 @@ package com.github.ak.fetcher.service;
 
 import com.github.ak.fetcher.config.AkToolsConfig;
 import com.github.ak.fetcher.dto.StockWithFundamental;
+import com.github.ak.fetcher.util.StockCodeUtil;
 import com.github.ak.fetcher.entity.StockDaily;
 import com.github.ak.fetcher.entity.StockBasic;
 import com.github.ak.fetcher.entity.StockSpot;
@@ -13,6 +14,8 @@ import com.github.ak.fetcher.mapper.StockFundamentalMapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
@@ -28,6 +31,7 @@ import java.util.List;
 
 @Service
 public class StockService {
+    private static final Logger log = LoggerFactory.getLogger(StockService.class);
 
     private final WebClient webClient;
     private final StockDailyMapper stockDailyMapper;
@@ -150,7 +154,7 @@ public class StockService {
             int insertedCount = 0;
             for (JsonNode row : data) {
                 StockDaily daily = new StockDaily();
-                daily.setCode(extractPureCode(code));
+                daily.setCode(StockCodeUtil.extractPureCode(code));
                 // 日期格式可能是 "2024-01-02T00:00:00.000"，需要处理
                 String dateStr = row.get("date").asText();
                 if (dateStr.contains("T")) {
@@ -197,7 +201,7 @@ public class StockService {
      */
     public Mono<Integer> fetchStockSpot() {
         return webClient.get()
-                .uri("/stock_zh_a_spot_em")
+                .uri("/stock_zh_a_spot")
                 .retrieve()
                 .bodyToMono(String.class)
                 .map(this::parseAndSaveStockSpot);
@@ -215,36 +219,40 @@ public class StockService {
             }
 
             int count = 0;
+            int skipped = 0;
             for (JsonNode node : array) {
+                String code = node.get("代码").asText();
+
+                // 检查是否已存在，跳过已存在的记录
+                String pureCode = StockCodeUtil.extractPureCode(code);
+                StockSpot existing = stockSpotMapper.selectById(pureCode);
+                if (existing != null) {
+                    skipped++;
+                    continue;
+                }
+
                 StockSpot spot = new StockSpot();
-                spot.setCode(node.get("代码").asText());
+                spot.setCode(pureCode);
                 spot.setName(node.get("名称").asText());
                 spot.setLatestPrice(getBigDecimal(node, "最新价"));
                 spot.setChangePct(getBigDecimal(node, "涨跌幅"));
                 spot.setChangeAmount(getBigDecimal(node, "涨跌额"));
+                spot.setBid(getBigDecimal(node, "买入"));
+                spot.setAsk(getBigDecimal(node, "卖出"));
                 spot.setVolume(getBigDecimal(node, "成交量"));
                 spot.setAmount(getBigDecimal(node, "成交额"));
-                spot.setAmplitude(getBigDecimal(node, "振幅"));
                 spot.setHigh(getBigDecimal(node, "最高"));
                 spot.setLow(getBigDecimal(node, "最低"));
                 spot.setOpenPrice(getBigDecimal(node, "今开"));
                 spot.setPrevClose(getBigDecimal(node, "昨收"));
-                spot.setVolumeRatio(getBigDecimal(node, "量比"));
-                spot.setTurnoverRate(getBigDecimal(node, "换手率"));
-                spot.setPeDynamic(getBigDecimal(node, "市盈率-动态"));
-                spot.setPb(getBigDecimal(node, "市净率"));
-                spot.setTotalMarketValue(getBigDecimal(node, "总市值"));
-                spot.setCircMarketValue(getBigDecimal(node, "流通市值"));
-                spot.setSpeedPct(getBigDecimal(node, "涨速"));
-                spot.setChange5minPct(getBigDecimal(node, "5分钟涨跌"));
-                spot.setChange60dPct(getBigDecimal(node, "60日涨跌幅"));
-                spot.setChangeYtdPct(getBigDecimal(node, "年初至今涨跌幅"));
-                spot.setTradeTime(LocalDateTime.now());
+                spot.setTimestamp(node.get("时间戳").asText());
+                spot.setCreatedAt(LocalDateTime.now());
 
                 stockSpotMapper.insert(spot);
                 count++;
             }
 
+            log.info("Stock spot saved: {}, skipped: {}", count, skipped);
             return count;
         } catch (Exception e) {
             throw new RuntimeException("解析实时行情失败: " + e.getMessage(), e);
@@ -335,7 +343,7 @@ public class StockService {
 
             StockFundamental fundamental = new StockFundamental();
             // 入库时去掉前缀，只保留6位纯数字代码
-            fundamental.setCode(extractPureCode(symbol));
+            fundamental.setCode(StockCodeUtil.extractPureCode(symbol));
 
             for (JsonNode node : array) {
                 String item = node.get("item").asText();
@@ -507,7 +515,7 @@ public class StockService {
         }
 
         // 提取纯数字代码用于关联查询
-        String pureCode = extractPureCode(code);
+        String pureCode = StockCodeUtil.extractPureCode(code);
         if (pureCode == null || pureCode.isEmpty()) {
             return Mono.empty();
         }
@@ -523,21 +531,4 @@ public class StockService {
         return Mono.just(new StockWithFundamental(basic, fundamental));
     }
 
-    /**
-     * 从带前缀的代码中提取纯数字代码
-     * sh600000 -> 600000, SZ000776 -> 000776
-     */
-    public String extractPureCode(String code) {
-        if (code == null || code.isEmpty()) {
-            return null;
-        }
-        // 去掉 sh/SZ/bj 等前缀（不区分大小写）
-        if (code.length() > 2) {
-            String prefix = code.substring(0, 2).toLowerCase();
-            if ("sh".equals(prefix) || "sz".equals(prefix) || "bj".equals(prefix)) {
-                return code.substring(2);
-            }
-        }
-        return code;
-    }
 }
