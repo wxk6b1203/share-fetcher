@@ -184,3 +184,11 @@ curl -X POST http://localhost:8090/api/fetch/stock-list
 - 日志级别设为 INFO，SQL语句不再打印到控制台
 - 历史行情拉取支持增量更新：如果数据库已有数据，会自动跳过已存在的日期范围
 - 任务系统使用Java虚拟线程实现，支持任务取消和进度追踪
+
+## 定时任务
+
+| 任务 | 执行时间 | 说明 |
+|------|----------|------|
+| DailyHistoryFetchScheduler | 每天 4:00 | 拉取当天所有股票的历史行情 |
+
+定时任务通过 Spring `@Scheduled` 实现，每天凌晨4点自动触发，通过任务系统提交 `HISTORY_DATA_FETCH` 任务拉取当天行情数据。
