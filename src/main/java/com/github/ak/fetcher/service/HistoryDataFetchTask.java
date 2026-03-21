@@ -111,7 +111,7 @@ public class HistoryDataFetchTask implements TaskExecutor.CancellableTask {
 
                 try {
                     // 添加延迟避免请求过快（1-3秒随机）
-                    Thread.sleep((long) (Math.random() * 1000));
+                    Thread.sleep((long) (Math.random() * 300));
 
                     // 获取该股票在数据库中的最早和最晚日期
                     LocalDate dbMinDate = getDbMinDate(code);

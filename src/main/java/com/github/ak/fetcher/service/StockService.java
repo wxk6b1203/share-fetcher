@@ -223,9 +223,12 @@ public class StockService {
             for (JsonNode node : array) {
                 String code = node.get("代码").asText();
 
-                // 检查是否已存在，跳过已存在的记录
+                // 检查是否已存在，跳过已存在的记录 (code + timestamp 唯一)
                 String pureCode = StockCodeUtil.extractPureCode(code);
-                StockSpot existing = stockSpotMapper.selectById(pureCode);
+                String timestamp = node.get("时间戳").asText();
+                QueryWrapper<StockSpot> queryWrapper = new QueryWrapper<>();
+                queryWrapper.eq("code", pureCode).eq("timestamp", timestamp);
+                StockSpot existing = stockSpotMapper.selectOne(queryWrapper);
                 if (existing != null) {
                     skipped++;
                     continue;

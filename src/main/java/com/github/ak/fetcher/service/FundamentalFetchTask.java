@@ -104,7 +104,7 @@ public class FundamentalFetchTask implements TaskExecutor.CancellableTask {
 
                 try {
                     // 添加延迟避免请求过快（1-3秒随机）
-                    Thread.sleep((long) (Math.random() * 1000 + 500));
+                    Thread.sleep((long) (Math.random() * 400));
 
                     // 检查是否已存在最新版本的基本面数据
                     QueryWrapper<StockFundamental> queryWrapper = new QueryWrapper<>();

@@ -1,5 +1,6 @@
 package com.github.ak.fetcher.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.ak.fetcher.config.AkToolsConfig;
@@ -93,9 +94,12 @@ public class SpotFetchTask implements TaskExecutor.CancellableTask {
 
                 String code = node.get("代码").asText();
 
-                // 检查是否已存在，跳过已存在的记录
+                // 检查是否已存在，跳过已存在的记录 (code + timestamp 唯一)
                 String pureCode = StockCodeUtil.extractPureCode(code);
-                StockSpot existing = stockSpotMapper.selectById(pureCode);
+                String timestamp = node.has("时间戳") ? node.get("时间戳").asText() : null;
+                QueryWrapper<StockSpot> queryWrapper = new QueryWrapper<>();
+                queryWrapper.eq("code", pureCode).eq("timestamp", timestamp);
+                StockSpot existing = stockSpotMapper.selectOne(queryWrapper);
                 if (existing != null) {
                     skipped++;
                     continue;
